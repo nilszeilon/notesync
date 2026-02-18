@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Notes</title>
+	<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+	<div class="layout">
+		<aside class="sidebar">
+			<div class="sidebar-header">
+				<a href="/">Notes</a>
+			</div>
+			<div class="sidebar-search">
+				<input type="text" id="search" placeholder="Search notes..." autocomplete="off">
+			</div>
+			<div class="search-results" id="search-results">
+				<ul id="search-list"></ul>
+			</div>
+			<nav class="sidebar-nav" id="sidebar-nav">
+				<h3>All notes</h3>
+				<ul>
+				{{range .Notes}}
+					<li><a href="/{{.Slug}}">{{.Title}}</a></li>
+				{{end}}
+				</ul>
+			</nav>
+		</aside>
+		<div class="content">
+			<div class="content-inner">
+				<h1 class="page-title">Notes</h1>
+				{{if .Notes}}
+				<ul class="note-list">
+				{{range .Notes}}
+					<li>
+						<a href="/{{.Slug}}">{{.Title}}</a>
+						<span class="note-date">{{.DateStr}}</span>
+					</li>
+				{{end}}
+				</ul>
+				{{else}}
+				<p>No published notes yet.</p>
+				{{end}}
+				<footer>
+					<p>Built with <a href="https://github.com/nilszeilon/notesync">notesync</a></p>
+				</footer>
+			</div>
+		</div>
+	</div>
+	<script>
+	(function() {
+		var index = null;
+		var input = document.getElementById('search');
+		var results = document.getElementById('search-results');
+		var list = document.getElementById('search-list');
+		var nav = document.getElementById('sidebar-nav');
+
+		input.addEventListener('focus', function() {
+			if (!index) {
+				fetch('/search.json')
+					.then(function(r) { return r.json(); })
+					.then(function(data) { index = data; });
+			}
+		});
+
+		input.addEventListener('input', function() {
+			var q = this.value.trim().toLowerCase();
+			if (!q) {
+				results.className = 'search-results';
+				nav.style.display = '';
+				return;
+			}
+			nav.style.display = 'none';
+			if (!index) {
+				results.className = 'search-results';
+				return;
+			}
+			var matches = index.filter(function(n) {
+				return n.title.toLowerCase().indexOf(q) !== -1;
+			});
+			list.innerHTML = '';
+			if (matches.length === 0) {
+				list.innerHTML = '<li class="no-results">No results</li>';
+			} else {
+				matches.forEach(function(n) {
+					var li = document.createElement('li');
+					var a = document.createElement('a');
+					a.href = '/' + n.slug;
+					a.textContent = n.title;
+					li.appendChild(a);
+					list.appendChild(li);
+				});
+			}
+			results.className = 'search-results active';
+		});
+	})();
+	</script>
+</body>
+</html>

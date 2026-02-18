@@ -1,0 +1,3 @@
+{$DOMAIN} {
+    reverse_proxy notesync-server:8080
+}

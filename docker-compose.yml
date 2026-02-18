@@ -1,0 +1,29 @@
+services:
+  notesync-server:
+    build: .
+    expose:
+      - "8080"
+    environment:
+      - NOTESYNC_TOKEN=${NOTESYNC_TOKEN}
+    volumes:
+      - notesync_data:/data
+      - notesync_site:/_site
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:-http://localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  notesync_data:
+  notesync_site:
+  caddy_data:
+  caddy_config:

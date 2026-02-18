@@ -1,0 +1,9 @@
+.git
+.claude
+.env
+data/
+_site/
+*.md
+Dockerfile
+docker-compose.yml
+Caddyfile
