@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # notesync installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | bash -s -- yourdomain.com
 
 REPO="https://github.com/nilszeilon/notesync.git"
 INSTALL_DIR="/opt/notesync"
@@ -12,7 +12,8 @@ echo ""
 
 # Must be root
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Please run as root: curl -fsSL <url> | sudo bash"
+    echo "Please run as root:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | sudo bash -s -- yourdomain.com"
     exit 1
 fi
 
@@ -74,11 +75,15 @@ if ! command -v git &>/dev/null; then
     fi
 fi
 
-# Ask for domain
-echo ""
-read -rp "Enter your domain (e.g. notes.example.com): " DOMAIN
+# Get domain from argument or prompt
+DOMAIN="${1:-}"
 if [ -z "$DOMAIN" ]; then
-    echo "Domain is required."
+    printf "Enter your domain (e.g. notes.example.com): " >/dev/tty
+    read -r DOMAIN </dev/tty
+fi
+if [ -z "$DOMAIN" ]; then
+    echo "Domain is required. Usage:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | sudo bash -s -- yourdomain.com"
     exit 1
 fi
 
