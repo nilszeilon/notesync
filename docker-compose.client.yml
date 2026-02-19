@@ -1,0 +1,10 @@
+services:
+  notesync-client:
+    image: ghcr.io/nilszeilon/notesync:latest
+    restart: unless-stopped
+    entrypoint: ["notesync-client"]
+    command: ["-dir", "/notes", "-server", "${NOTESYNC_SERVER}"]
+    environment:
+      - NOTESYNC_TOKEN=${NOTESYNC_TOKEN}
+    volumes:
+      - ${NOTESYNC_DIR:-~/notes}:/notes

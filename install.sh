@@ -85,7 +85,7 @@ if ! command -v git &>/dev/null; then
     fi
 fi
 
-# Ask if user wants a blog (public site) or storage only
+# Choose mode
 MODE="${NOTESYNC_MODE:-}"
 if [ -z "$MODE" ] && [ -f "$INSTALL_DIR/.env" ]; then
     MODE=$(grep '^MODE=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
@@ -93,22 +93,24 @@ fi
 if [ -z "$MODE" ]; then
     echo "How do you want to use notesync?"
     echo ""
-    echo "  1) Blog    — public site with a domain and TLS (publish server)"
-    echo "  2) Storage — private sync server, no public site (storage only)"
+    echo "  1) Blog    — public website with a domain and TLS"
+    echo "  2) Storage — private sync server (e.g. on Tailscale)"
+    echo "  3) Client  — sync a local folder to an existing server"
     echo ""
-    printf "Choose [1/2]: " >/dev/tty
+    printf "Choose [1/2/3]: " >/dev/tty
     read -r CHOICE </dev/tty
     case "$CHOICE" in
-        1|blog)  MODE="blog" ;;
+        1|blog)    MODE="blog" ;;
         2|storage) MODE="storage" ;;
+        3|client)  MODE="client" ;;
         *)
-            echo "Invalid choice. Please enter 1 or 2."
+            echo "Invalid choice. Please enter 1, 2, or 3."
             exit 1
             ;;
     esac
 fi
 
-# Get domain for blog mode
+# --- Blog mode: get domain ---
 DOMAIN=""
 if [ "$MODE" = "blog" ]; then
     DOMAIN="${1:-}"
@@ -123,13 +125,37 @@ if [ "$MODE" = "blog" ]; then
         echo "Domain is required for blog mode."
         exit 1
     fi
+
+    # Open firewall ports
+    if command -v ufw &>/dev/null; then
+        echo "==> Allowing ports 80 and 443 through firewall..."
+        ufw allow 80/tcp >/dev/null 2>&1 || true
+        ufw allow 443/tcp >/dev/null 2>&1 || true
+    fi
 fi
 
-# Open firewall ports if ufw is present (blog mode only)
-if [ "$MODE" = "blog" ] && command -v ufw &>/dev/null; then
-    echo "==> Allowing ports 80 and 443 through firewall..."
-    ufw allow 80/tcp >/dev/null 2>&1 || true
-    ufw allow 443/tcp >/dev/null 2>&1 || true
+# --- Client mode: get server URL and notes dir ---
+NOTESYNC_SERVER=""
+NOTESYNC_DIR=""
+if [ "$MODE" = "client" ]; then
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        NOTESYNC_SERVER=$(grep '^NOTESYNC_SERVER=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+        NOTESYNC_DIR=$(grep '^NOTESYNC_DIR=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+    fi
+    if [ -z "$NOTESYNC_SERVER" ]; then
+        printf "Enter server URL (e.g. http://100.x.x.x:8080): " >/dev/tty
+        read -r NOTESYNC_SERVER </dev/tty
+    fi
+    if [ -z "$NOTESYNC_SERVER" ]; then
+        echo "Server URL is required."
+        exit 1
+    fi
+    if [ -z "$NOTESYNC_DIR" ]; then
+        printf "Enter notes directory [/home/$(logname)/notes]: " >/dev/tty
+        read -r NOTESYNC_DIR </dev/tty
+        NOTESYNC_DIR="${NOTESYNC_DIR:-/home/$(logname)/notes}"
+    fi
+    mkdir -p "$NOTESYNC_DIR"
 fi
 
 # Clone or update repo
@@ -147,33 +173,53 @@ if [ -f "$INSTALL_DIR/.env" ]; then
     echo "==> Existing token preserved"
 fi
 if [ -z "${TOKEN:-}" ]; then
-    TOKEN=$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)
+    if [ "$MODE" = "client" ]; then
+        printf "Enter server token: " >/dev/tty
+        read -r TOKEN </dev/tty
+        if [ -z "$TOKEN" ]; then
+            echo "Token is required."
+            exit 1
+        fi
+    else
+        TOKEN=$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)
+    fi
 fi
 
 # Write .env
-if [ "$MODE" = "blog" ]; then
-    cat > "$INSTALL_DIR/.env" <<EOF
+case "$MODE" in
+    blog)
+        cat > "$INSTALL_DIR/.env" <<EOF
 MODE=$MODE
 DOMAIN=$DOMAIN
 NOTESYNC_TOKEN=$TOKEN
 EOF
-else
-    cat > "$INSTALL_DIR/.env" <<EOF
+        ;;
+    storage)
+        cat > "$INSTALL_DIR/.env" <<EOF
 MODE=$MODE
 NOTESYNC_TOKEN=$TOKEN
 EOF
-fi
+        ;;
+    client)
+        cat > "$INSTALL_DIR/.env" <<EOF
+MODE=$MODE
+NOTESYNC_TOKEN=$TOKEN
+NOTESYNC_SERVER=$NOTESYNC_SERVER
+NOTESYNC_DIR=$NOTESYNC_DIR
+EOF
+        ;;
+esac
 
 # Start services
 echo "==> Starting notesync..."
 cd "$INSTALL_DIR"
 docker compose down 2>/dev/null || true
 
-if [ "$MODE" = "blog" ]; then
-    docker compose -f docker-compose.yml up -d --pull always
-else
-    docker compose -f docker-compose.storage.yml up -d --pull always
-fi
+case "$MODE" in
+    blog)    docker compose -f docker-compose.yml up -d --pull always ;;
+    storage) docker compose -f docker-compose.storage.yml up -d --pull always ;;
+    client)  docker compose -f docker-compose.client.yml up -d --pull always ;;
+esac
 
 echo ""
 echo "========================================"
@@ -181,36 +227,49 @@ echo "  notesync is running!"
 echo "========================================"
 echo ""
 
-if [ "$MODE" = "blog" ]; then
-    echo "  Mode:  Blog (public site)"
-    echo "  URL:   https://$DOMAIN"
-    echo "  Token: $TOKEN"
-    echo ""
-    echo "  SAVE THIS TOKEN — you need it to sync."
-    echo "  It will not be shown again."
-    echo ""
-    echo "  Sync published notes to this server:"
-    echo "    NOTESYNC_PUBLISH_TOKEN=$TOKEN \\"
-    echo "      notesync-client -dir ~/notes -publish-server https://$DOMAIN"
-else
-    echo "  Mode:  Storage (private sync)"
-    echo "  URL:   http://<this-server>:8080"
-    echo "  Token: $TOKEN"
-    echo ""
-    echo "  SAVE THIS TOKEN — you need it to sync."
-    echo "  It will not be shown again."
-    echo ""
-    echo "  Sync all notes to this server:"
-    echo "    NOTESYNC_TOKEN=$TOKEN \\"
-    echo "      notesync-client -dir ~/notes -server http://<this-server>:8080"
-fi
+case "$MODE" in
+    blog)
+        echo "  Mode:   Blog (public site)"
+        echo "  URL:    https://$DOMAIN"
+        echo "  Token:  $TOKEN"
+        echo ""
+        echo "  SAVE THIS TOKEN — you need it to sync."
+        echo ""
+        echo "  Set up a client to sync to this server:"
+        echo "    curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | sudo bash"
+        echo "    # choose '3) Client' and enter:"
+        echo "    #   server: https://$DOMAIN"
+        echo "    #   token:  $TOKEN"
+        ;;
+    storage)
+        # Try to detect Tailscale IP
+        TS_IP=""
+        if command -v tailscale &>/dev/null; then
+            TS_IP=$(tailscale ip -4 2>/dev/null || true)
+        fi
+        SERVER_ADDR="${TS_IP:-<this-server>}"
 
-echo ""
-echo "  Both targets at once:"
-echo "    NOTESYNC_TOKEN=<storage-token> NOTESYNC_PUBLISH_TOKEN=<blog-token> \\"
-echo "      notesync-client -dir ~/notes \\"
-echo "        -server http://<storage-server>:8080 \\"
-echo "        -publish-server https://<blog-domain>"
+        echo "  Mode:   Storage (private sync)"
+        echo "  URL:    http://$SERVER_ADDR:8080"
+        echo "  Token:  $TOKEN"
+        echo ""
+        echo "  SAVE THIS TOKEN — you need it to sync."
+        echo ""
+        echo "  Set up a client on another machine:"
+        echo "    curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | sudo bash"
+        echo "    # choose '3) Client' and enter:"
+        echo "    #   server: http://$SERVER_ADDR:8080"
+        echo "    #   token:  $TOKEN"
+        ;;
+    client)
+        echo "  Mode:   Client"
+        echo "  Server: $NOTESYNC_SERVER"
+        echo "  Dir:    $NOTESYNC_DIR"
+        echo ""
+        echo "  Your notes will sync automatically."
+        ;;
+esac
+
 echo ""
 echo "  Logs:  cd $INSTALL_DIR && docker compose logs -f"
 echo "========================================"
