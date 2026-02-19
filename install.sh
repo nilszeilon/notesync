@@ -10,79 +10,97 @@ INSTALL_DIR="/opt/notesync"
 echo "==> notesync installer"
 echo ""
 
-# Must be root
-if [ "$(id -u)" -ne 0 ]; then
+OS="$(uname -s)"
+
+# Must be root (on Linux)
+if [ "$OS" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
     echo "Please run as root:"
     echo "  curl -fsSL https://raw.githubusercontent.com/nilszeilon/notesync/main/install.sh | sudo bash"
     exit 1
 fi
 
-# Detect package manager
-if command -v apt-get &>/dev/null; then
-    PKG="apt"
-elif command -v dnf &>/dev/null; then
-    PKG="dnf"
-elif command -v yum &>/dev/null; then
-    PKG="yum"
-else
-    echo "Unsupported package manager. Install Docker manually and re-run."
-    exit 1
-fi
-
-# Install Docker if missing
-if ! command -v docker &>/dev/null; then
-    echo "==> Installing Docker..."
-    if [ "$PKG" = "apt" ]; then
-        # Remove stale Docker repo from a previous failed install
-        rm -f /etc/apt/sources.list.d/docker.list
-        apt-get update -qq
-        apt-get install -y -qq ca-certificates curl gnupg
-        install -m 0755 -d /etc/apt/keyrings
-
-        # Docker repos use "debian" for both debian and raspbian,
-        # and may not have the latest codename (e.g. trixie) yet
-        DOCKER_DISTRO=$(. /etc/os-release && echo "$ID")
-        DOCKER_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-        case "$DOCKER_DISTRO" in raspbian) DOCKER_DISTRO="debian" ;; esac
-        case "$DOCKER_CODENAME" in trixie) DOCKER_CODENAME="bookworm" ;; esac
-
-        curl -fsSL "https://download.docker.com/linux/$DOCKER_DISTRO/gpg" \
-            | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        chmod a+r /etc/apt/keyrings/docker.gpg
-        echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-            https://download.docker.com/linux/$DOCKER_DISTRO \
-            $DOCKER_CODENAME stable" \
-            > /etc/apt/sources.list.d/docker.list
-        apt-get update -qq
-        apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    else
-        # RHEL/CentOS/Fedora
-        $PKG install -y -q yum-utils || true
-        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo 2>/dev/null || \
-            $PKG config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo 2>/dev/null || true
-        $PKG install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin
+if [ "$OS" = "Darwin" ]; then
+    # --- macOS ---
+    if ! command -v docker &>/dev/null; then
+        echo "Docker not found. Please install Docker Desktop:"
+        echo "  https://docs.docker.com/desktop/install/mac-install/"
+        exit 1
     fi
-    systemctl enable --now docker
-    echo "==> Docker installed"
-else
+    if ! docker info &>/dev/null 2>&1; then
+        echo "Docker is not running. Please start Docker Desktop and re-run."
+        exit 1
+    fi
     echo "==> Docker found"
+else
+    # --- Linux ---
+
+    # Detect package manager
+    if command -v apt-get &>/dev/null; then
+        PKG="apt"
+    elif command -v dnf &>/dev/null; then
+        PKG="dnf"
+    elif command -v yum &>/dev/null; then
+        PKG="yum"
+    else
+        echo "Unsupported package manager. Install Docker manually and re-run."
+        exit 1
+    fi
+
+    # Install Docker if missing
+    if ! command -v docker &>/dev/null; then
+        echo "==> Installing Docker..."
+        if [ "$PKG" = "apt" ]; then
+            # Remove stale Docker repo from a previous failed install
+            rm -f /etc/apt/sources.list.d/docker.list
+            apt-get update -qq
+            apt-get install -y -qq ca-certificates curl gnupg
+            install -m 0755 -d /etc/apt/keyrings
+
+            # Docker repos use "debian" for both debian and raspbian,
+            # and may not have the latest codename (e.g. trixie) yet
+            DOCKER_DISTRO=$(. /etc/os-release && echo "$ID")
+            DOCKER_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+            case "$DOCKER_DISTRO" in raspbian) DOCKER_DISTRO="debian" ;; esac
+            case "$DOCKER_CODENAME" in trixie) DOCKER_CODENAME="bookworm" ;; esac
+
+            curl -fsSL "https://download.docker.com/linux/$DOCKER_DISTRO/gpg" \
+                | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            chmod a+r /etc/apt/keyrings/docker.gpg
+            echo \
+                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+                https://download.docker.com/linux/$DOCKER_DISTRO \
+                $DOCKER_CODENAME stable" \
+                > /etc/apt/sources.list.d/docker.list
+            apt-get update -qq
+            apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
+        else
+            # RHEL/CentOS/Fedora
+            $PKG install -y -q yum-utils || true
+            yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo 2>/dev/null || \
+                $PKG config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo 2>/dev/null || true
+            $PKG install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin
+        fi
+        systemctl enable --now docker
+        echo "==> Docker installed"
+    else
+        echo "==> Docker found"
+    fi
+
+    # Install git if missing
+    if ! command -v git &>/dev/null; then
+        echo "==> Installing git..."
+        if [ "$PKG" = "apt" ]; then
+            apt-get install -y -qq git
+        else
+            $PKG install -y -q git
+        fi
+    fi
 fi
 
 # Verify docker compose
 if ! docker compose version &>/dev/null; then
     echo "docker compose plugin not found. Please install it manually."
     exit 1
-fi
-
-# Install git if missing
-if ! command -v git &>/dev/null; then
-    echo "==> Installing git..."
-    if [ "$PKG" = "apt" ]; then
-        apt-get install -y -qq git
-    else
-        $PKG install -y -q git
-    fi
 fi
 
 # Choose mode
@@ -158,9 +176,12 @@ if [ "$MODE" = "client" ]; then
         read -r NOTESYNC_PUBLISH_SERVER </dev/tty
     fi
     if [ -z "$NOTESYNC_DIR" ]; then
-        printf "Enter notes directory [/home/$(logname)/notes]: " >/dev/tty
+        REAL_USER="${SUDO_USER:-$(whoami)}"
+        REAL_HOME=$(eval echo "~$REAL_USER")
+        DEFAULT_NOTES="$REAL_HOME/notes"
+        printf "Enter notes directory [$DEFAULT_NOTES]: " >/dev/tty
         read -r NOTESYNC_DIR </dev/tty
-        NOTESYNC_DIR="${NOTESYNC_DIR:-/home/$(logname)/notes}"
+        NOTESYNC_DIR="${NOTESYNC_DIR:-$DEFAULT_NOTES}"
     fi
     mkdir -p "$NOTESYNC_DIR"
 fi
