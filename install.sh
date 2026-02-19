@@ -33,6 +33,8 @@ fi
 if ! command -v docker &>/dev/null; then
     echo "==> Installing Docker..."
     if [ "$PKG" = "apt" ]; then
+        # Remove stale Docker repo from a previous failed install
+        rm -f /etc/apt/sources.list.d/docker.list
         apt-get update -qq
         apt-get install -y -qq ca-certificates curl gnupg
         install -m 0755 -d /etc/apt/keyrings
