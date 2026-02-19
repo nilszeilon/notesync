@@ -120,6 +120,14 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 						if err := os.Remove(path); err != nil {
 							log.Printf("delete local %s: %v", relPath, err)
 						}
+						// Remove empty parent directories up to sync dir
+						dir := filepath.Dir(path)
+						for dir != w.dir {
+							if err := os.Remove(dir); err != nil {
+								break
+							}
+							dir = filepath.Dir(dir)
+						}
 						return nil
 					}
 					// Local file recreated after deletion — upload

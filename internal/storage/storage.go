@@ -112,7 +112,19 @@ func (s *Storage) Delete(relPath string) error {
 		return err
 	}
 
-	return os.Remove(fullPath)
+	if err := os.Remove(fullPath); err != nil {
+		return err
+	}
+
+	// Remove empty parent directories up to dataDir
+	dir := filepath.Dir(fullPath)
+	for dir != s.dataDir {
+		if err := os.Remove(dir); err != nil {
+			break // not empty or other error, stop
+		}
+		dir = filepath.Dir(dir)
+	}
+	return nil
 }
 
 func (s *Storage) List() ([]FileInfo, error) {
