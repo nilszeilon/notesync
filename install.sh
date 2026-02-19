@@ -124,6 +124,10 @@ if [ "$MODE" = "client" ]; then
         printf "Enter publish/blog server URL (leave empty to skip): " >/dev/tty
         read -r NOTESYNC_PUBLISH_SERVER </dev/tty
     fi
+    # Auto-add https:// if user entered a bare domain
+    if [ -n "$NOTESYNC_PUBLISH_SERVER" ] && ! echo "$NOTESYNC_PUBLISH_SERVER" | grep -q '://'; then
+        NOTESYNC_PUBLISH_SERVER="https://$NOTESYNC_PUBLISH_SERVER"
+    fi
     if [ -z "$NOTESYNC_DIR" ]; then
         REAL_USER="${SUDO_USER:-$(whoami)}"
         REAL_HOME=$(eval echo "~$REAL_USER")
