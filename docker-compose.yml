@@ -7,8 +7,8 @@ services:
     environment:
       - NOTESYNC_TOKEN=${NOTESYNC_TOKEN}
     volumes:
-      - notesync_data:/data
-      - notesync_site:/_site
+      - ${NOTESYNC_DATA:-./data}:/data
+      - ./_site:/_site
 
   caddy:
     image: caddy:2
@@ -24,7 +24,5 @@ services:
       - caddy_config:/config
 
 volumes:
-  notesync_data:
-  notesync_site:
   caddy_data:
   caddy_config:

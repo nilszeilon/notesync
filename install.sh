@@ -184,6 +184,7 @@ EOF
         cat > "$INSTALL_DIR/.env" <<EOF
 MODE=$MODE
 NOTESYNC_TOKEN=$TOKEN
+NOTESYNC_DATA=$INSTALL_DIR/data
 EOF
         ;;
     client)
