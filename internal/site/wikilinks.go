@@ -6,11 +6,30 @@ import (
 	"strings"
 )
 
+var imageEmbedRe = regexp.MustCompile(`!\[\[([^\]]+)\]\]`)
 var wikilinkRe = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
-// ExtractWikiLinks returns all [[wiki-link]] targets from markdown content.
+var imageExtSet = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true,
+	".gif": true, ".svg": true, ".webp": true,
+}
+
+// isImagePath returns true if the path has an image extension.
+func isImagePath(path string) bool {
+	ext := strings.ToLower(path)
+	if idx := strings.LastIndex(ext, "."); idx != -1 {
+		return imageExtSet[ext[idx:]]
+	}
+	return false
+}
+
+// ExtractWikiLinks returns all [[wiki-link]] targets from markdown content,
+// excluding image embeds (![[image.png]]).
 func ExtractWikiLinks(content string) []string {
-	matches := wikilinkRe.FindAllStringSubmatch(content, -1)
+	// Remove image embeds first so they aren't matched as wikilinks
+	cleaned := imageEmbedRe.ReplaceAllString(content, "")
+
+	matches := wikilinkRe.FindAllStringSubmatch(cleaned, -1)
 	seen := make(map[string]bool)
 	var links []string
 	for _, m := range matches {
@@ -29,9 +48,29 @@ func ExtractWikiLinks(content string) []string {
 	return links
 }
 
-// ReplaceWikiLinks converts [[wiki-links]] to HTML anchor tags.
+// ReplaceWikiLinks converts [[wiki-links]] to HTML anchor tags
+// and ![[image]] embeds to <img> tags.
 func ReplaceWikiLinks(content string) string {
-	return wikilinkRe.ReplaceAllStringFunc(content, func(match string) string {
+	// First, replace image embeds ![[image.png]]
+	content = imageEmbedRe.ReplaceAllStringFunc(content, func(match string) string {
+		inner := strings.TrimSpace(match[3 : len(match)-2]) // strip ![[  ]]
+
+		// Handle ![[alt|image.png]] syntax
+		alt := ""
+		path := inner
+		if idx := strings.Index(inner, "|"); idx != -1 {
+			alt = strings.TrimSpace(inner[:idx])
+			path = strings.TrimSpace(inner[idx+1:])
+		}
+		if alt == "" {
+			alt = path
+		}
+
+		return `<img src="/images/` + html.EscapeString(path) + `" alt="` + html.EscapeString(alt) + `">`
+	})
+
+	// Then, replace note wikilinks [[link]]
+	content = wikilinkRe.ReplaceAllStringFunc(content, func(match string) string {
 		inner := match[2 : len(match)-2]
 		display := inner
 		target := inner
@@ -47,6 +86,8 @@ func ReplaceWikiLinks(content string) string {
 
 		return `<a href="/` + slug + `">` + html.EscapeString(display) + `</a>`
 	})
+
+	return content
 }
 
 // Slugify converts a note title to a URL-safe slug.
