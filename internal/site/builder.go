@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +45,7 @@ func NewBuilder(dataDir, outDir string) *Builder {
 		dataDir: dataDir,
 		outDir:  outDir,
 		md: goldmark.New(
+			goldmark.WithExtensions(extension.GFM),
 			goldmark.WithRendererOptions(
 				html.WithUnsafe(),
 			),
