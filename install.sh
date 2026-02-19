@@ -36,13 +36,21 @@ if ! command -v docker &>/dev/null; then
         apt-get update -qq
         apt-get install -y -qq ca-certificates curl gnupg
         install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo "$ID")/gpg \
+
+        # Docker repos use "debian" for both debian and raspbian,
+        # and may not have the latest codename (e.g. trixie) yet
+        DOCKER_DISTRO=$(. /etc/os-release && echo "$ID")
+        DOCKER_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+        case "$DOCKER_DISTRO" in raspbian) DOCKER_DISTRO="debian" ;; esac
+        case "$DOCKER_CODENAME" in trixie) DOCKER_CODENAME="bookworm" ;; esac
+
+        curl -fsSL "https://download.docker.com/linux/$DOCKER_DISTRO/gpg" \
             | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
         chmod a+r /etc/apt/keyrings/docker.gpg
         echo \
             "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-            https://download.docker.com/linux/$(. /etc/os-release && echo "$ID") \
-            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+            https://download.docker.com/linux/$DOCKER_DISTRO \
+            $DOCKER_CODENAME stable" \
             > /etc/apt/sources.list.d/docker.list
         apt-get update -qq
         apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
