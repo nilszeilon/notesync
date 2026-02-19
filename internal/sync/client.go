@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,6 +54,31 @@ func (c *Client) ListRemote() ([]storage.FileInfo, error) {
 	return files, nil
 }
 
+func (c *Client) ListTombstones() ([]storage.Tombstone, error) {
+	req, err := http.NewRequest(http.MethodGet, c.serverURL+"/api/tombstones", nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setAuth(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list tombstones: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list tombstones: %s - %s", resp.Status, string(body))
+	}
+
+	var tombstones []storage.Tombstone
+	if err := json.NewDecoder(resp.Body).Decode(&tombstones); err != nil {
+		return nil, fmt.Errorf("decode tombstones: %w", err)
+	}
+	return tombstones, nil
+}
+
 func (c *Client) Upload(relPath string, localPath string) error {
 	f, err := os.Open(localPath)
 	if err != nil {
@@ -75,6 +101,50 @@ func (c *Client) Upload(relPath string, localPath string) error {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("upload %s: %s - %s", relPath, resp.Status, string(body))
+	}
+	return nil
+}
+
+func (c *Client) Download(relPath, localPath string) error {
+	req, err := http.NewRequest(http.MethodGet, c.serverURL+"/api/files/"+relPath, nil)
+	if err != nil {
+		return err
+	}
+	c.setAuth(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("download %s: %s - %s", relPath, resp.Status, string(body))
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return fmt.Errorf("create parent dirs: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".notesync-dl-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write download: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename download: %w", err)
 	}
 	return nil
 }

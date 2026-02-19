@@ -52,9 +52,11 @@ func (w *Watcher) FullSync() error {
 	return nil
 }
 
-// fullSyncClient syncs files to a single client. If filter is nil, all syncable
-// files are synced. If filter is set, only files where filter returns true are
-// synced; the rest are deleted from remote.
+// fullSyncClient syncs files with a single client. If filter is nil (private
+// client), sync is bidirectional: local files are pushed, remote-only files are
+// pulled, and conflicts are resolved by most recent modification time. If filter
+// is set (publish client), sync is one-way push with remote deletions for files
+// that no longer pass the filter.
 func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string) bool) error {
 	remote, err := c.ListRemote()
 	if err != nil {
@@ -64,6 +66,20 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 	remoteMap := make(map[string]storage.FileInfo)
 	for _, f := range remote {
 		remoteMap[f.Path] = f
+	}
+
+	// For private client, fetch tombstones to handle remote deletions
+	var tombstoneMap map[string]storage.Tombstone
+	if filter == nil {
+		tombstones, err := c.ListTombstones()
+		if err != nil {
+			log.Printf("warning: failed to list tombstones: %v", err)
+		} else {
+			tombstoneMap = make(map[string]storage.Tombstone, len(tombstones))
+			for _, t := range tombstones {
+				tombstoneMap[t.Path] = t
+			}
+		}
 	}
 
 	localFiles := make(map[string]bool)
@@ -94,10 +110,53 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 		}
 
 		rf, exists := remoteMap[relPath]
-		if !exists || rf.Hash != localHash {
+		if !exists {
+			// Not on remote — check tombstones for private client
+			if filter == nil && tombstoneMap != nil {
+				if ts, hasTombstone := tombstoneMap[relPath]; hasTombstone {
+					if ts.DeletedAt.After(info.ModTime()) {
+						// Deleted remotely after local modtime — delete locally
+						log.Printf("deleting (tombstone): %s", relPath)
+						if err := os.Remove(path); err != nil {
+							log.Printf("delete local %s: %v", relPath, err)
+						}
+						return nil
+					}
+					// Local file recreated after deletion — upload
+					log.Printf("uploading (recreated after tombstone): %s", relPath)
+					if err := c.Upload(relPath, path); err != nil {
+						return fmt.Errorf("upload %s: %w", relPath, err)
+					}
+					return nil
+				}
+			}
+			// No tombstone — new file, upload
 			log.Printf("uploading: %s", relPath)
 			if err := c.Upload(relPath, path); err != nil {
 				return fmt.Errorf("upload %s: %w", relPath, err)
+			}
+		} else if rf.Hash != localHash {
+			if filter != nil {
+				// Publish client: always upload local
+				log.Printf("uploading: %s", relPath)
+				if err := c.Upload(relPath, path); err != nil {
+					return fmt.Errorf("upload %s: %w", relPath, err)
+				}
+			} else {
+				// Private client: resolve conflict by modtime
+				localModTime := info.ModTime()
+				if localModTime.After(rf.ModTime) {
+					log.Printf("uploading (local newer): %s", relPath)
+					if err := c.Upload(relPath, path); err != nil {
+						return fmt.Errorf("upload %s: %w", relPath, err)
+					}
+				} else {
+					log.Printf("downloading (remote newer): %s", relPath)
+					localPath := filepath.Join(w.dir, relPath)
+					if err := c.Download(relPath, localPath); err != nil {
+						return fmt.Errorf("download %s: %w", relPath, err)
+					}
+				}
 			}
 		}
 		return nil
@@ -106,12 +165,29 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 		return err
 	}
 
-	// Delete remote files that don't exist locally (or don't pass the filter)
-	for _, rf := range remote {
-		if !localFiles[rf.Path] {
-			log.Printf("deleting remote: %s", rf.Path)
-			if err := c.Delete(rf.Path); err != nil {
-				log.Printf("delete remote %s: %v", rf.Path, err)
+	if filter != nil {
+		// Publish client: delete remote files that don't exist locally (or don't pass filter)
+		for _, rf := range remote {
+			if !localFiles[rf.Path] {
+				log.Printf("deleting remote: %s", rf.Path)
+				if err := c.Delete(rf.Path); err != nil {
+					log.Printf("delete remote %s: %v", rf.Path, err)
+				}
+			}
+		}
+	} else {
+		// Private client: download remote files not present locally
+		for _, rf := range remote {
+			if !localFiles[rf.Path] {
+				ext := strings.ToLower(filepath.Ext(rf.Path))
+				if !syncExts[ext] {
+					continue
+				}
+				log.Printf("downloading (new remote): %s", rf.Path)
+				localPath := filepath.Join(w.dir, rf.Path)
+				if err := c.Download(rf.Path, localPath); err != nil {
+					log.Printf("download %s: %v", rf.Path, err)
+				}
 			}
 		}
 	}

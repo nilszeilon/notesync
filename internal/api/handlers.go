@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -24,6 +25,7 @@ func NewHandler(store *storage.Storage, builder *site.Builder, token string) *Ha
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/files/", h.authMiddleware(h.handleFiles))
 	mux.HandleFunc("/api/files", h.authMiddleware(h.handleListFiles))
+	mux.HandleFunc("/api/tombstones", h.authMiddleware(h.handleListTombstones))
 }
 
 func (h *Handler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -64,6 +66,16 @@ func (h *Handler) handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
+	case http.MethodGet:
+		rc, err := h.store.Get(filePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		defer rc.Close()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		io.Copy(w, rc)
+
 	case http.MethodPut:
 		// Limit uploads to 100MB
 		r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
@@ -71,6 +83,7 @@ func (h *Handler) handleFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		h.store.RemoveTombstone(filePath)
 		h.rebuild()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -80,6 +93,7 @@ func (h *Handler) handleFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		h.store.AddTombstone(filePath)
 		h.rebuild()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -87,6 +101,22 @@ func (h *Handler) handleFiles(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleListTombstones(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tombstones, err := h.store.ListTombstones()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tombstones)
 }
 
 func (h *Handler) rebuild() {
