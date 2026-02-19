@@ -3,7 +3,7 @@ services:
     image: ghcr.io/nilszeilon/notesync:latest
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       - NOTESYNC_TOKEN=${NOTESYNC_TOKEN}
     volumes:

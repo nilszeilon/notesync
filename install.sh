@@ -160,9 +160,9 @@ cd "$INSTALL_DIR"
 docker compose down 2>/dev/null || true
 
 if [ "$MODE" = "blog" ]; then
-    docker compose -f docker-compose.yml up --build -d
+    docker compose -f docker-compose.yml up -d --pull always
 else
-    docker compose -f docker-compose.storage.yml up --build -d
+    docker compose -f docker-compose.storage.yml up -d --pull always
 fi
 
 echo ""
