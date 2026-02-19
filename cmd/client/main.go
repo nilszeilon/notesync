@@ -12,6 +12,7 @@ func main() {
 	dir := flag.String("dir", ".", "local notes directory to watch")
 	server := flag.String("server", "", "private server URL (syncs all files)")
 	publishServer := flag.String("publish-server", "", "publish server URL (syncs published files only)")
+	pushOnly := flag.Bool("push-only", false, "only push local files, don't download new remote files (still syncs updates to existing local files)")
 	flag.Parse()
 
 	if *server == "" && *publishServer == "" {
@@ -30,7 +31,7 @@ func main() {
 		publishClient = sync.NewClient(*publishServer, publishToken)
 	}
 
-	watcher := sync.NewWatcher(*dir, client, publishClient)
+	watcher := sync.NewWatcher(*dir, client, publishClient, *pushOnly)
 
 	// Full sync on startup
 	log.Println("performing full sync...")

@@ -8,11 +8,13 @@ services:
         ARGS="-dir /notes"
         [ -n "$NOTESYNC_SERVER" ] && ARGS="$$ARGS -server $$NOTESYNC_SERVER"
         [ -n "$NOTESYNC_PUBLISH_SERVER" ] && ARGS="$$ARGS -publish-server $$NOTESYNC_PUBLISH_SERVER"
+        [ "$NOTESYNC_PUSH_ONLY" = "true" ] && ARGS="$$ARGS -push-only"
         exec notesync-client $$ARGS
     environment:
       - NOTESYNC_TOKEN=${NOTESYNC_TOKEN:-}
       - NOTESYNC_PUBLISH_TOKEN=${NOTESYNC_PUBLISH_TOKEN:-}
       - NOTESYNC_SERVER=${NOTESYNC_SERVER:-}
       - NOTESYNC_PUBLISH_SERVER=${NOTESYNC_PUBLISH_SERVER:-}
+      - NOTESYNC_PUSH_ONLY=${NOTESYNC_PUSH_ONLY:-}
     volumes:
       - ${NOTESYNC_DIR:-~/notes}:/notes

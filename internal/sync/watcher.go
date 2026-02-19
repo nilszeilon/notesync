@@ -24,10 +24,11 @@ type Watcher struct {
 	dir           string
 	client        *Client
 	publishClient *Client
+	pushOnly      bool
 }
 
-func NewWatcher(dir string, client *Client, publishClient *Client) *Watcher {
-	return &Watcher{dir: dir, client: client, publishClient: publishClient}
+func NewWatcher(dir string, client *Client, publishClient *Client, pushOnly bool) *Watcher {
+	return &Watcher{dir: dir, client: client, publishClient: publishClient, pushOnly: pushOnly}
 }
 
 // FullSync compares local files with remote and uploads diffs.
@@ -183,7 +184,7 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 				}
 			}
 		}
-	} else {
+	} else if !w.pushOnly {
 		// Private client: download remote files not present locally
 		for _, rf := range remote {
 			if !localFiles[rf.Path] {
