@@ -2,9 +2,17 @@ services:
   notesync-client:
     image: ghcr.io/nilszeilon/notesync:latest
     restart: unless-stopped
-    entrypoint: ["notesync-client"]
-    command: ["-dir", "/notes", "-server", "${NOTESYNC_SERVER}"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        ARGS="-dir /notes"
+        [ -n "$NOTESYNC_SERVER" ] && ARGS="$$ARGS -server $$NOTESYNC_SERVER"
+        [ -n "$NOTESYNC_PUBLISH_SERVER" ] && ARGS="$$ARGS -publish-server $$NOTESYNC_PUBLISH_SERVER"
+        exec notesync-client $$ARGS
     environment:
-      - NOTESYNC_TOKEN=${NOTESYNC_TOKEN}
+      - NOTESYNC_TOKEN=${NOTESYNC_TOKEN:-}
+      - NOTESYNC_PUBLISH_TOKEN=${NOTESYNC_PUBLISH_TOKEN:-}
+      - NOTESYNC_SERVER=${NOTESYNC_SERVER:-}
+      - NOTESYNC_PUBLISH_SERVER=${NOTESYNC_PUBLISH_SERVER:-}
     volumes:
       - ${NOTESYNC_DIR:-~/notes}:/notes

@@ -134,21 +134,28 @@ if [ "$MODE" = "blog" ]; then
     fi
 fi
 
-# --- Client mode: get server URL and notes dir ---
+# --- Client mode: get server URL, optional publish server, and notes dir ---
 NOTESYNC_SERVER=""
+NOTESYNC_PUBLISH_SERVER=""
 NOTESYNC_DIR=""
+PUBLISH_TOKEN=""
 if [ "$MODE" = "client" ]; then
     if [ -f "$INSTALL_DIR/.env" ]; then
         NOTESYNC_SERVER=$(grep '^NOTESYNC_SERVER=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+        NOTESYNC_PUBLISH_SERVER=$(grep '^NOTESYNC_PUBLISH_SERVER=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
         NOTESYNC_DIR=$(grep '^NOTESYNC_DIR=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
     fi
     if [ -z "$NOTESYNC_SERVER" ]; then
-        printf "Enter server URL (e.g. http://100.x.x.x:8080): " >/dev/tty
+        printf "Enter storage server URL (e.g. http://100.x.x.x:8080): " >/dev/tty
         read -r NOTESYNC_SERVER </dev/tty
     fi
     if [ -z "$NOTESYNC_SERVER" ]; then
         echo "Server URL is required."
         exit 1
+    fi
+    if [ -z "$NOTESYNC_PUBLISH_SERVER" ]; then
+        printf "Enter publish/blog server URL (leave empty to skip): " >/dev/tty
+        read -r NOTESYNC_PUBLISH_SERVER </dev/tty
     fi
     if [ -z "$NOTESYNC_DIR" ]; then
         printf "Enter notes directory [/home/$(logname)/notes]: " >/dev/tty
@@ -170,11 +177,12 @@ fi
 # Preserve existing token on re-run, generate new one on first install
 if [ -f "$INSTALL_DIR/.env" ]; then
     TOKEN=$(grep '^NOTESYNC_TOKEN=' "$INSTALL_DIR/.env" | cut -d= -f2- || true)
-    echo "==> Existing token preserved"
+    PUBLISH_TOKEN=$(grep '^NOTESYNC_PUBLISH_TOKEN=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+    echo "==> Existing config preserved"
 fi
 if [ -z "${TOKEN:-}" ]; then
     if [ "$MODE" = "client" ]; then
-        printf "Enter server token: " >/dev/tty
+        printf "Enter storage server token: " >/dev/tty
         read -r TOKEN </dev/tty
         if [ -z "$TOKEN" ]; then
             echo "Token is required."
@@ -182,6 +190,14 @@ if [ -z "${TOKEN:-}" ]; then
         fi
     else
         TOKEN=$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)
+    fi
+fi
+if [ "$MODE" = "client" ] && [ -n "${NOTESYNC_PUBLISH_SERVER:-}" ] && [ -z "${PUBLISH_TOKEN:-}" ]; then
+    printf "Enter publish server token: " >/dev/tty
+    read -r PUBLISH_TOKEN </dev/tty
+    if [ -z "$PUBLISH_TOKEN" ]; then
+        echo "Publish token is required when a publish server is set."
+        exit 1
     fi
 fi
 
@@ -206,6 +222,8 @@ MODE=$MODE
 NOTESYNC_TOKEN=$TOKEN
 NOTESYNC_SERVER=$NOTESYNC_SERVER
 NOTESYNC_DIR=$NOTESYNC_DIR
+NOTESYNC_PUBLISH_TOKEN=${PUBLISH_TOKEN:-}
+NOTESYNC_PUBLISH_SERVER=${NOTESYNC_PUBLISH_SERVER:-}
 EOF
         ;;
 esac
@@ -262,9 +280,12 @@ case "$MODE" in
         echo "    #   token:  $TOKEN"
         ;;
     client)
-        echo "  Mode:   Client"
-        echo "  Server: $NOTESYNC_SERVER"
-        echo "  Dir:    $NOTESYNC_DIR"
+        echo "  Mode:    Client"
+        echo "  Storage: $NOTESYNC_SERVER"
+        if [ -n "${NOTESYNC_PUBLISH_SERVER:-}" ]; then
+            echo "  Blog:    $NOTESYNC_PUBLISH_SERVER"
+        fi
+        echo "  Dir:     $NOTESYNC_DIR"
         echo ""
         echo "  Your notes will sync automatically."
         ;;
