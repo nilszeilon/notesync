@@ -10,13 +10,27 @@ import (
 
 func main() {
 	dir := flag.String("dir", ".", "local notes directory to watch")
-	server := flag.String("server", "http://localhost:8080", "server URL")
+	server := flag.String("server", "", "private server URL (syncs all files)")
+	publishServer := flag.String("publish-server", "", "publish server URL (syncs published files only)")
 	flag.Parse()
 
-	token := os.Getenv("NOTESYNC_TOKEN")
+	if *server == "" && *publishServer == "" {
+		log.Fatal("at least one of -server or -publish-server must be set")
+	}
 
-	client := sync.NewClient(*server, token)
-	watcher := sync.NewWatcher(*dir, client)
+	var client *sync.Client
+	if *server != "" {
+		token := os.Getenv("NOTESYNC_TOKEN")
+		client = sync.NewClient(*server, token)
+	}
+
+	var publishClient *sync.Client
+	if *publishServer != "" {
+		publishToken := os.Getenv("NOTESYNC_PUBLISH_TOKEN")
+		publishClient = sync.NewClient(*publishServer, publishToken)
+	}
+
+	watcher := sync.NewWatcher(*dir, client, publishClient)
 
 	// Full sync on startup
 	log.Println("performing full sync...")

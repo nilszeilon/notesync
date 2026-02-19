@@ -1,0 +1,12 @@
+services:
+  notesync-server:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - NOTESYNC_TOKEN=${NOTESYNC_TOKEN}
+    volumes:
+      - notesync_data:/data
+
+volumes:
+  notesync_data:

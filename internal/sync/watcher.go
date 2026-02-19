@@ -21,17 +21,42 @@ var syncExts = map[string]bool{
 }
 
 type Watcher struct {
-	dir    string
-	client *Client
+	dir           string
+	client        *Client
+	publishClient *Client
 }
 
-func NewWatcher(dir string, client *Client) *Watcher {
-	return &Watcher{dir: dir, client: client}
+func NewWatcher(dir string, client *Client, publishClient *Client) *Watcher {
+	return &Watcher{dir: dir, client: client, publishClient: publishClient}
 }
 
 // FullSync compares local files with remote and uploads diffs.
 func (w *Watcher) FullSync() error {
-	remote, err := w.client.ListRemote()
+	// Sync all files to private client
+	if w.client != nil {
+		if err := w.fullSyncClient(w.client, nil); err != nil {
+			return fmt.Errorf("full sync (private): %w", err)
+		}
+	}
+
+	// Sync published files + images to publish client
+	if w.publishClient != nil {
+		shouldSync := func(relPath, absPath string) bool {
+			return isImage(relPath) || (isMd(relPath) && isPublished(absPath))
+		}
+		if err := w.fullSyncClient(w.publishClient, shouldSync); err != nil {
+			return fmt.Errorf("full sync (publish): %w", err)
+		}
+	}
+
+	return nil
+}
+
+// fullSyncClient syncs files to a single client. If filter is nil, all syncable
+// files are synced. If filter is set, only files where filter returns true are
+// synced; the rest are deleted from remote.
+func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string) bool) error {
+	remote, err := c.ListRemote()
 	if err != nil {
 		return fmt.Errorf("list remote: %w", err)
 	}
@@ -43,7 +68,6 @@ func (w *Watcher) FullSync() error {
 
 	localFiles := make(map[string]bool)
 
-	// Walk local dir, upload new/changed files
 	err = filepath.Walk(w.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -57,6 +81,11 @@ func (w *Watcher) FullSync() error {
 		}
 
 		relPath, _ := filepath.Rel(w.dir, path)
+
+		if filter != nil && !filter(relPath, path) {
+			return nil
+		}
+
 		localFiles[relPath] = true
 
 		localHash, err := hashFile(path)
@@ -67,7 +96,7 @@ func (w *Watcher) FullSync() error {
 		rf, exists := remoteMap[relPath]
 		if !exists || rf.Hash != localHash {
 			log.Printf("uploading: %s", relPath)
-			if err := w.client.Upload(relPath, path); err != nil {
+			if err := c.Upload(relPath, path); err != nil {
 				return fmt.Errorf("upload %s: %w", relPath, err)
 			}
 		}
@@ -77,11 +106,11 @@ func (w *Watcher) FullSync() error {
 		return err
 	}
 
-	// Delete remote files that don't exist locally
+	// Delete remote files that don't exist locally (or don't pass the filter)
 	for _, rf := range remote {
 		if !localFiles[rf.Path] {
 			log.Printf("deleting remote: %s", rf.Path)
-			if err := w.client.Delete(rf.Path); err != nil {
+			if err := c.Delete(rf.Path); err != nil {
 				log.Printf("delete remote %s: %v", rf.Path, err)
 			}
 		}
@@ -148,25 +177,16 @@ func (w *Watcher) Watch() error {
 				if _, err := os.Stat(event.Name); err != nil {
 					continue // file was deleted quickly
 				}
-				log.Printf("syncing: %s", relPath)
-				if err := w.client.Upload(relPath, event.Name); err != nil {
-					log.Printf("upload error: %v", err)
-				}
+				w.handleWrite(relPath, event.Name)
 
 			case event.Op&(fsnotify.Remove|fsnotify.Rename) != 0:
 				// Editors often save via rename; wait briefly then check if file reappeared
 				time.Sleep(200 * time.Millisecond)
 				if _, err := os.Stat(event.Name); err == nil {
 					// File still exists (editor rename-save), treat as update
-					log.Printf("syncing: %s", relPath)
-					if err := w.client.Upload(relPath, event.Name); err != nil {
-						log.Printf("upload error: %v", err)
-					}
+					w.handleWrite(relPath, event.Name)
 				} else {
-					log.Printf("deleting: %s", relPath)
-					if err := w.client.Delete(relPath); err != nil {
-						log.Printf("delete error: %v", err)
-					}
+					w.handleDelete(relPath)
 				}
 			}
 
@@ -182,6 +202,47 @@ func (w *Watcher) Watch() error {
 				return nil
 			}
 			log.Printf("watcher error: %v", err)
+		}
+	}
+}
+
+func (w *Watcher) handleWrite(relPath, absPath string) {
+	// Always upload to private client
+	if w.client != nil {
+		log.Printf("syncing: %s", relPath)
+		if err := w.client.Upload(relPath, absPath); err != nil {
+			log.Printf("upload error: %v", err)
+		}
+	}
+
+	// Publish client: upload if published or image, delete if unpublished md
+	if w.publishClient != nil {
+		if isImage(relPath) || (isMd(relPath) && isPublished(absPath)) {
+			log.Printf("syncing (publish): %s", relPath)
+			if err := w.publishClient.Upload(relPath, absPath); err != nil {
+				log.Printf("publish upload error: %v", err)
+			}
+		} else if isMd(relPath) {
+			// Markdown file that is not published — remove from publish server
+			log.Printf("removing unpublished from publish server: %s", relPath)
+			if err := w.publishClient.Delete(relPath); err != nil {
+				log.Printf("publish delete error: %v", err)
+			}
+		}
+	}
+}
+
+func (w *Watcher) handleDelete(relPath string) {
+	if w.client != nil {
+		log.Printf("deleting: %s", relPath)
+		if err := w.client.Delete(relPath); err != nil {
+			log.Printf("delete error: %v", err)
+		}
+	}
+	if w.publishClient != nil {
+		log.Printf("deleting (publish): %s", relPath)
+		if err := w.publishClient.Delete(relPath); err != nil {
+			log.Printf("publish delete error: %v", err)
 		}
 	}
 }
