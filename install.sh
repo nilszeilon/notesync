@@ -87,9 +87,6 @@ if [ -z "$DOMAIN" ]; then
     exit 1
 fi
 
-# Generate token
-TOKEN=$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)
-
 # Clone or update repo
 if [ -d "$INSTALL_DIR" ]; then
     echo "==> Updating notesync..."
@@ -97,6 +94,15 @@ if [ -d "$INSTALL_DIR" ]; then
 else
     echo "==> Cloning notesync..."
     git clone "$REPO" "$INSTALL_DIR"
+fi
+
+# Preserve existing token on re-run, generate new one on first install
+if [ -f "$INSTALL_DIR/.env" ]; then
+    TOKEN=$(grep '^NOTESYNC_TOKEN=' "$INSTALL_DIR/.env" | cut -d= -f2-)
+    echo "==> Existing token preserved"
+fi
+if [ -z "${TOKEN:-}" ]; then
+    TOKEN=$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)
 fi
 
 # Write .env

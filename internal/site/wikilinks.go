@@ -1,6 +1,7 @@
 package site
 
 import (
+	"html"
 	"regexp"
 	"strings"
 )
@@ -44,7 +45,7 @@ func ReplaceWikiLinks(content string) string {
 		target = strings.TrimSpace(target)
 		slug := Slugify(target)
 
-		return `<a href="/` + slug + `">` + display + `</a>`
+		return `<a href="/` + slug + `">` + html.EscapeString(display) + `</a>`
 	})
 }
 

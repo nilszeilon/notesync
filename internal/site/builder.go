@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yuin/goldmark"
@@ -32,6 +33,7 @@ type Note struct {
 }
 
 type Builder struct {
+	mu      sync.Mutex
 	dataDir string
 	outDir  string
 	md      goldmark.Markdown
@@ -50,6 +52,9 @@ func NewBuilder(dataDir, outDir string) *Builder {
 }
 
 func (b *Builder) Build() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	// Clean output directory contents (but not the dir itself, which may be a mount point)
 	entries, err := os.ReadDir(b.outDir)
 	if err != nil && !os.IsNotExist(err) {

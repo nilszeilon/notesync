@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -29,7 +30,8 @@ func (h *Handler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.token != "" {
 			auth := r.Header.Get("Authorization")
-			if !strings.HasPrefix(auth, "Bearer ") || auth[7:] != h.token {
+			if !strings.HasPrefix(auth, "Bearer ") ||
+				subtle.ConstantTimeCompare([]byte(auth[7:]), []byte(h.token)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -63,6 +65,8 @@ func (h *Handler) handleFiles(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodPut:
+		// Limit uploads to 100MB
+		r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
 		if err := h.store.Put(filePath, r.Body); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

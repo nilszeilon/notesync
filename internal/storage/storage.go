@@ -23,38 +23,72 @@ type Storage struct {
 }
 
 func New(dataDir string) (*Storage, error) {
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	absDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
+	if err := os.MkdirAll(absDir, 0755); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
-	return &Storage{dataDir: dataDir}, nil
+	return &Storage{dataDir: absDir}, nil
 }
 
 func (s *Storage) DataDir() string {
 	return s.dataDir
 }
 
+// safePath resolves relPath under dataDir and verifies it doesn't escape.
+func (s *Storage) safePath(relPath string) (string, error) {
+	cleaned := filepath.Clean(relPath)
+	full := filepath.Join(s.dataDir, cleaned)
+	abs, err := filepath.Abs(full)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+	if !strings.HasPrefix(abs, s.dataDir+string(filepath.Separator)) && abs != s.dataDir {
+		return "", fmt.Errorf("path escapes data directory: %s", relPath)
+	}
+	return abs, nil
+}
+
 func (s *Storage) Put(relPath string, r io.Reader) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	relPath = filepath.Clean(relPath)
-	if strings.Contains(relPath, "..") {
-		return fmt.Errorf("invalid path: %s", relPath)
+	fullPath, err := s.safePath(relPath)
+	if err != nil {
+		return err
 	}
 
-	fullPath := filepath.Join(s.dataDir, relPath)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return fmt.Errorf("create parent dirs: %w", err)
 	}
 
-	f, err := os.Create(fullPath)
+	// Write to temp file then rename for atomicity
+	tmp, err := os.CreateTemp(filepath.Dir(fullPath), ".notesync-*")
 	if err != nil {
-		return fmt.Errorf("create file: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer f.Close()
+	tmpPath := tmp.Name()
 
-	if _, err := io.Copy(f, r); err != nil {
+	if _, err := io.Copy(tmp, r); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return fmt.Errorf("write file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("sync file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, fullPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename file: %w", err)
 	}
 	return nil
 }
@@ -63,12 +97,11 @@ func (s *Storage) Delete(relPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	relPath = filepath.Clean(relPath)
-	if strings.Contains(relPath, "..") {
-		return fmt.Errorf("invalid path: %s", relPath)
+	fullPath, err := s.safePath(relPath)
+	if err != nil {
+		return err
 	}
 
-	fullPath := filepath.Join(s.dataDir, relPath)
 	return os.Remove(fullPath)
 }
 
@@ -76,7 +109,7 @@ func (s *Storage) List() ([]FileInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var files []FileInfo
+	files := []FileInfo{}
 	err := filepath.Walk(s.dataDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -105,8 +138,8 @@ func (s *Storage) List() ([]FileInfo, error) {
 	return files, err
 }
 
-func (s *Storage) FullPath(relPath string) string {
-	return filepath.Join(s.dataDir, filepath.Clean(relPath))
+func (s *Storage) FullPath(relPath string) (string, error) {
+	return s.safePath(relPath)
 }
 
 func hashFile(path string) (string, error) {
