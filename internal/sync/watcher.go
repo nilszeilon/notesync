@@ -255,9 +255,7 @@ func (w *Watcher) Watch() error {
 			}
 
 			ext := strings.ToLower(filepath.Ext(event.Name))
-			if !syncExts[ext] {
-				continue
-			}
+			isSyncable := syncExts[ext]
 
 			// Debounce: skip if we processed this file very recently
 			if last, ok := debounce[event.Name]; ok && time.Since(last) < 500*time.Millisecond {
@@ -273,6 +271,9 @@ func (w *Watcher) Watch() error {
 
 			switch {
 			case event.Op&(fsnotify.Create|fsnotify.Write) != 0:
+				if !isSyncable {
+					continue
+				}
 				// Small delay to let the file finish writing
 				time.Sleep(100 * time.Millisecond)
 				if _, err := os.Stat(event.Name); err != nil {
@@ -285,9 +286,15 @@ func (w *Watcher) Watch() error {
 				time.Sleep(200 * time.Millisecond)
 				if _, err := os.Stat(event.Name); err == nil {
 					// File still exists (editor rename-save), treat as update
-					w.handleWrite(relPath, event.Name)
-				} else {
+					if isSyncable {
+						w.handleWrite(relPath, event.Name)
+					}
+				} else if isSyncable {
 					w.handleDelete(relPath)
+				} else {
+					// No extension or non-syncable — likely a directory deletion.
+					// Delete all remote files under this prefix.
+					w.handleDirDelete(relPath)
 				}
 			}
 
@@ -330,6 +337,31 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 				log.Printf("publish delete error: %v", err)
 			}
 		}
+	}
+}
+
+func (w *Watcher) handleDirDelete(relPrefix string) {
+	deleteFromClient := func(c *Client, label string) {
+		remote, err := c.ListRemote()
+		if err != nil {
+			log.Printf("dir delete list (%s): %v", label, err)
+			return
+		}
+		prefix := relPrefix + "/"
+		for _, rf := range remote {
+			if rf.Path == relPrefix || strings.HasPrefix(rf.Path, prefix) {
+				log.Printf("deleting (%s dir removal): %s", label, rf.Path)
+				if err := c.Delete(rf.Path); err != nil {
+					log.Printf("delete %s (%s): %v", rf.Path, label, err)
+				}
+			}
+		}
+	}
+	if w.client != nil {
+		deleteFromClient(w.client, "private")
+	}
+	if w.publishClient != nil {
+		deleteFromClient(w.publishClient, "publish")
 	}
 }
 
