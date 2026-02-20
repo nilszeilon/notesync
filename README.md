@@ -148,20 +148,10 @@ All notes sync privately. Only notes with `publish: true` get pushed to the blog
 
 ## Push-only mode (work computers)
 
-If you want to sync from a machine (like a work laptop) without pulling down all your personal notes, set the `NOTESYNC_PUSH_ONLY` environment variable:
+If you want to sync from a machine (like a work laptop) without pulling down all your personal notes, the installer will ask during client setup:
 
-```bash
-# After installing as a client, edit the .env:
-sudo nano /opt/notesync/.env
-
-# Add:
-NOTESYNC_PUSH_ONLY=true
 ```
-
-Then restart:
-
-```bash
-cd /opt/notesync && sudo docker compose -f docker-compose.client.yml up -d
+Push-only mode? (only push local changes, don't download new remote files) [y/N]: y
 ```
 
 In push-only mode:
@@ -184,7 +174,7 @@ date: 2025-01-15
 - **title** — defaults to the filename if not set
 - **date** — defaults to file modification time if not set
 - **Wikilinks** — `[[Note Title]]` links between published notes
-- **Images** — `![[photo.png]]` embeds are supported
+- **Images** — `![[photo.png]]` embeds are supported; only images referenced by published notes are synced to the blog server
 - **GFM** — tables, strikethrough, task lists, and autolinks all work
 
 Create an `index.md` with `publish: true` to use a custom homepage instead of the auto-generated note listing.
