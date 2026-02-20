@@ -105,12 +105,14 @@ fi
 NOTESYNC_SERVER=""
 NOTESYNC_PUBLISH_SERVER=""
 NOTESYNC_DIR=""
+NOTESYNC_PUSH_ONLY=""
 PUBLISH_TOKEN=""
 if [ "$MODE" = "client" ]; then
     if [ -f "$INSTALL_DIR/.env" ]; then
         NOTESYNC_SERVER=$(grep '^NOTESYNC_SERVER=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
         NOTESYNC_PUBLISH_SERVER=$(grep '^NOTESYNC_PUBLISH_SERVER=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
         NOTESYNC_DIR=$(grep '^NOTESYNC_DIR=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+        NOTESYNC_PUSH_ONLY=$(grep '^NOTESYNC_PUSH_ONLY=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
     fi
     if [ -z "$NOTESYNC_SERVER" ]; then
         printf "Enter storage server URL (e.g. http://100.x.x.x:8080): " >/dev/tty
@@ -137,6 +139,14 @@ if [ "$MODE" = "client" ]; then
         NOTESYNC_DIR="${NOTESYNC_DIR:-$DEFAULT_NOTES}"
     fi
     mkdir -p "$NOTESYNC_DIR"
+    if [ -z "$NOTESYNC_PUSH_ONLY" ]; then
+        printf "Push-only mode? (only push local changes, don't download new remote files) [y/N]: " >/dev/tty
+        read -r PUSH_ONLY_ANSWER </dev/tty
+        case "$PUSH_ONLY_ANSWER" in
+            y|Y|yes|Yes) NOTESYNC_PUSH_ONLY="true" ;;
+            *)           NOTESYNC_PUSH_ONLY="false" ;;
+        esac
+    fi
 fi
 
 # Clone or update repo
@@ -197,6 +207,7 @@ MODE=$MODE
 NOTESYNC_TOKEN=$TOKEN
 NOTESYNC_SERVER=$NOTESYNC_SERVER
 NOTESYNC_DIR=$NOTESYNC_DIR
+NOTESYNC_PUSH_ONLY=${NOTESYNC_PUSH_ONLY:-false}
 NOTESYNC_PUBLISH_TOKEN=${PUBLISH_TOKEN:-}
 NOTESYNC_PUBLISH_SERVER=${NOTESYNC_PUBLISH_SERVER:-}
 EOF

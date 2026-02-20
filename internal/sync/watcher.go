@@ -41,10 +41,17 @@ func (w *Watcher) FullSync() error {
 		}
 	}
 
-	// Sync published files + images to publish client
+	// Sync published files + referenced images to publish client
 	if w.publishClient != nil {
+		referencedImages := collectPublishedImageRefs(w.dir)
 		shouldSync := func(relPath, absPath string) bool {
-			return isImage(relPath) || (isMd(relPath) && isPublished(absPath))
+			if isMd(relPath) {
+				return isPublished(absPath)
+			}
+			if isImage(relPath) {
+				return referencedImages[filepath.Base(relPath)]
+			}
+			return false
 		}
 		if err := w.fullSyncClient(w.publishClient, shouldSync); err != nil {
 			return fmt.Errorf("full sync (publish): %w", err)
@@ -323,21 +330,64 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 		}
 	}
 
-	// Publish client: upload if published or image, delete if unpublished md
+	// Publish client: upload if published md (+ its images), or referenced image
 	if w.publishClient != nil {
-		if isImage(relPath) || (isMd(relPath) && isPublished(absPath)) {
+		if isMd(relPath) && isPublished(absPath) {
 			log.Printf("syncing (publish): %s", relPath)
 			if err := w.publishClient.Upload(relPath, absPath); err != nil {
 				log.Printf("publish upload error: %v", err)
 			}
+			// Also sync any images referenced by this published file
+			w.syncReferencedImages(absPath)
 		} else if isMd(relPath) {
 			// Markdown file that is not published — remove from publish server
 			log.Printf("removing unpublished from publish server: %s", relPath)
 			if err := w.publishClient.Delete(relPath); err != nil {
 				log.Printf("publish delete error: %v", err)
 			}
+		} else if isImage(relPath) {
+			// Image changed — upload only if referenced by any published file
+			refs := collectPublishedImageRefs(w.dir)
+			if refs[filepath.Base(relPath)] {
+				log.Printf("syncing (publish, referenced image): %s", relPath)
+				if err := w.publishClient.Upload(relPath, absPath); err != nil {
+					log.Printf("publish upload error: %v", err)
+				}
+			}
 		}
 	}
+}
+
+// syncReferencedImages reads a published markdown file, finds its image
+// references, and uploads any matching local images to the publish server.
+func (w *Watcher) syncReferencedImages(absPath string) {
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return
+	}
+	refs := extractImageRefs(string(data))
+	if len(refs) == 0 {
+		return
+	}
+	refSet := make(map[string]bool, len(refs))
+	for _, r := range refs {
+		refSet[r] = true
+	}
+	// Walk the sync dir for matching images
+	filepath.Walk(w.dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !isImage(path) {
+			return nil
+		}
+		if !refSet[filepath.Base(path)] {
+			return nil
+		}
+		relPath, _ := filepath.Rel(w.dir, path)
+		log.Printf("syncing (publish, image for published note): %s", relPath)
+		if err := w.publishClient.Upload(relPath, path); err != nil {
+			log.Printf("publish image upload error: %v", err)
+		}
+		return nil
+	})
 }
 
 func (w *Watcher) handleDirDelete(relPrefix string) {
