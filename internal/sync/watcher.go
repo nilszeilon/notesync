@@ -25,10 +25,11 @@ type Watcher struct {
 	client        *Client
 	publishClient *Client
 	pushOnly      bool
+	pollInterval  time.Duration
 }
 
-func NewWatcher(dir string, client *Client, publishClient *Client, pushOnly bool) *Watcher {
-	return &Watcher{dir: dir, client: client, publishClient: publishClient, pushOnly: pushOnly}
+func NewWatcher(dir string, client *Client, publishClient *Client, pushOnly bool, pollInterval time.Duration) *Watcher {
+	return &Watcher{dir: dir, client: client, publishClient: publishClient, pushOnly: pushOnly, pollInterval: pollInterval}
 }
 
 // FullSync compares local files with remote and uploads diffs.
@@ -228,11 +229,26 @@ func (w *Watcher) Watch() error {
 
 	log.Printf("watching %s for changes...", w.dir)
 
+	// Periodic remote poll for changes from other clients
+	var pollChan <-chan time.Time
+	if w.pollInterval > 0 && !w.pushOnly {
+		ticker := time.NewTicker(w.pollInterval)
+		defer ticker.Stop()
+		pollChan = ticker.C
+		log.Printf("polling remote every %s for new files", w.pollInterval)
+	}
+
 	// Debounce events
 	debounce := make(map[string]time.Time)
 
 	for {
 		select {
+		case <-pollChan:
+			log.Println("polling remote for changes...")
+			if err := w.FullSync(); err != nil {
+				log.Printf("poll sync error: %v", err)
+			}
+
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil

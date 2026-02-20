@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"time"
 
 	"github.com/nilszeilon/notesync/internal/sync"
 )
@@ -13,6 +14,7 @@ func main() {
 	server := flag.String("server", "", "private server URL (syncs all files)")
 	publishServer := flag.String("publish-server", "", "publish server URL (syncs published files only)")
 	pushOnly := flag.Bool("push-only", false, "only push local files, don't download new remote files (still syncs updates to existing local files)")
+	poll := flag.Duration("poll", 30*time.Second, "interval to poll remote for changes from other clients (0 to disable)")
 	flag.Parse()
 
 	if *server == "" && *publishServer == "" {
@@ -31,7 +33,7 @@ func main() {
 		publishClient = sync.NewClient(*publishServer, publishToken)
 	}
 
-	watcher := sync.NewWatcher(*dir, client, publishClient, *pushOnly)
+	watcher := sync.NewWatcher(*dir, client, publishClient, *pushOnly, *poll)
 
 	// Full sync on startup
 	log.Println("performing full sync...")
