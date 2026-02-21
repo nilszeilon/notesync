@@ -16,7 +16,7 @@ var ImageExts = map[string]bool{
 
 var SyncExts = map[string]bool{
 	".md": true, ".png": true, ".jpg": true, ".jpeg": true,
-	".gif": true, ".svg": true, ".webp": true,
+	".gif": true, ".svg": true, ".webp": true, ".css": true,
 }
 
 func IsImage(path string) bool {

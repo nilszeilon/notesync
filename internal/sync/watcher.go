@@ -45,6 +45,9 @@ func (w *Watcher) FullSync() error {
 			if fileutil.IsImage(relPath) {
 				return referencedImages[filepath.Base(relPath)]
 			}
+			if filepath.Base(relPath) == "blog.css" {
+				return true
+			}
 			return false
 		}
 		if err := w.fullSyncClient(w.publishClient, shouldSync); err != nil {
@@ -324,7 +327,7 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 		}
 	}
 
-	// Publish client: upload if published md (+ its images), or referenced image
+	// Publish client: upload if published md (+ its images), referenced image, or blog.css
 	if w.publishClient != nil {
 		if fileutil.IsMd(relPath) && markdown.IsPublished(absPath) {
 			log.Printf("syncing (publish): %s", relPath)
@@ -347,6 +350,11 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 				if err := w.publishClient.Upload(relPath, absPath); err != nil {
 					log.Printf("publish upload error: %v", err)
 				}
+			}
+		} else if filepath.Base(relPath) == "blog.css" {
+			log.Printf("syncing (publish): %s", relPath)
+			if err := w.publishClient.Upload(relPath, absPath); err != nil {
+				log.Printf("publish upload error: %v", err)
 			}
 		}
 	}

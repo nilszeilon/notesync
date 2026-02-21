@@ -123,7 +123,7 @@ func (b *Builder) Build() error {
 	}
 
 	// Copy style.css
-	if err := os.WriteFile(filepath.Join(b.outDir, "style.css"), StyleCSS, 0644); err != nil {
+	if err := b.copyCSS(); err != nil {
 		return fmt.Errorf("write css: %w", err)
 	}
 
@@ -335,6 +335,14 @@ func (b *Builder) buildSearchIndex(notes []Note) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(b.outDir, "search.json"), data, 0644)
+}
+
+func (b *Builder) copyCSS() error {
+	custom := filepath.Join(b.dataDir, "blog.css")
+	if data, err := os.ReadFile(custom); err == nil {
+		return os.WriteFile(filepath.Join(b.outDir, "style.css"), data, 0644)
+	}
+	return os.WriteFile(filepath.Join(b.outDir, "style.css"), StyleCSS, 0644)
 }
 
 func (b *Builder) copyImages() error {
