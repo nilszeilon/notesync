@@ -45,7 +45,7 @@ func (w *Watcher) FullSync() error {
 			if fileutil.IsImage(relPath) {
 				return referencedImages[filepath.Base(relPath)]
 			}
-			if filepath.Base(relPath) == "blog.css" {
+			if isTemplateFile(relPath) {
 				return true
 			}
 			return false
@@ -327,7 +327,7 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 		}
 	}
 
-	// Publish client: upload if published md (+ its images), referenced image, or blog.css
+	// Publish client: upload if published md (+ its images), referenced image, or template override
 	if w.publishClient != nil {
 		if fileutil.IsMd(relPath) && markdown.IsPublished(absPath) {
 			log.Printf("syncing (publish): %s", relPath)
@@ -351,8 +351,8 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 					log.Printf("publish upload error: %v", err)
 				}
 			}
-		} else if filepath.Base(relPath) == "blog.css" {
-			log.Printf("syncing (publish): %s", relPath)
+		} else if isTemplateFile(relPath) {
+			log.Printf("syncing (publish, template): %s", relPath)
 			if err := w.publishClient.Upload(relPath, absPath); err != nil {
 				log.Printf("publish upload error: %v", err)
 			}
@@ -415,6 +415,12 @@ func (w *Watcher) handleDirDelete(relPrefix string) {
 	if w.publishClient != nil {
 		deleteFromClient(w.publishClient, "publish")
 	}
+}
+
+// isTemplateFile returns true if the path is inside a templates/ directory.
+func isTemplateFile(relPath string) bool {
+	parts := strings.Split(filepath.ToSlash(relPath), "/")
+	return len(parts) >= 2 && parts[0] == "templates"
 }
 
 func (w *Watcher) handleDelete(relPath string) {

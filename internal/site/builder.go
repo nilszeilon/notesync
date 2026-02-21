@@ -33,6 +33,8 @@ type Builder struct {
 	dataDir string
 	outDir  string
 	md      goldmark.Markdown
+	tmpl    *template.Template
+	css     []byte
 }
 
 func NewBuilder(dataDir, outDir string) *Builder {
@@ -63,6 +65,9 @@ func (b *Builder) Build() error {
 	if err := os.MkdirAll(b.outDir, 0755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
+
+	// Load templates (user overrides from dataDir/templates/ if present)
+	b.tmpl, b.css = loadUserTemplates(b.dataDir)
 
 	// Collect all notes
 	notes, err := b.collectNotes()
@@ -146,7 +151,13 @@ func (b *Builder) collectNotes() ([]Note, error) {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".md") {
+		if info.IsDir() {
+			if path != b.dataDir && filepath.Base(path) == "templates" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(strings.ToLower(path), ".md") {
 			return nil
 		}
 
@@ -252,7 +263,7 @@ func (b *Builder) buildNotePage(n Note, backlinkSlugs []string, slugIndex map[st
 	}
 	defer f.Close()
 
-	return Templates.ExecuteTemplate(f, "page.html", data)
+	return b.tmpl.ExecuteTemplate(f, "page.html", data)
 }
 
 func (b *Builder) buildIndexFromNote(n Note, backlinkSlugs []string, slugIndex map[string]Note) error {
@@ -291,7 +302,7 @@ func (b *Builder) buildIndexFromNote(n Note, backlinkSlugs []string, slugIndex m
 	}
 	defer f.Close()
 
-	return Templates.ExecuteTemplate(f, "page.html", data)
+	return b.tmpl.ExecuteTemplate(f, "page.html", data)
 }
 
 func (b *Builder) buildIndex(notes []Note) error {
@@ -312,7 +323,7 @@ func (b *Builder) buildIndex(notes []Note) error {
 	}
 	defer f.Close()
 
-	return Templates.ExecuteTemplate(f, "index.html", data)
+	return b.tmpl.ExecuteTemplate(f, "index.html", data)
 }
 
 type searchEntry struct {
@@ -338,11 +349,7 @@ func (b *Builder) buildSearchIndex(notes []Note) error {
 }
 
 func (b *Builder) copyCSS() error {
-	custom := filepath.Join(b.dataDir, "blog.css")
-	if data, err := os.ReadFile(custom); err == nil {
-		return os.WriteFile(filepath.Join(b.outDir, "style.css"), data, 0644)
-	}
-	return os.WriteFile(filepath.Join(b.outDir, "style.css"), StyleCSS, 0644)
+	return os.WriteFile(filepath.Join(b.outDir, "style.css"), b.css, 0644)
 }
 
 func (b *Builder) copyImages() error {

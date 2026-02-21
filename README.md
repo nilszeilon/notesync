@@ -179,15 +179,27 @@ date: 2025-01-15
 
 Create an `index.md` with `publish: true` to use a custom homepage instead of the auto-generated note listing.
 
-## Custom CSS
+## Custom templates
 
-You can override the blog's stylesheet by placing a file called `blog.css` in your notes folder. It syncs like any other file and replaces the default styling on the next rebuild.
+You can override the blog's CSS and HTML templates by creating a `templates/` folder in your notes directory. Any file you place there replaces the built-in default. The folder syncs like the rest of your notes.
 
-1. Copy the default stylesheet from [`templates/style.css`](templates/style.css) into your notes folder as `blog.css`
-2. Edit it however you like
-3. Save — it syncs and the blog rebuilds automatically
+```
+notes/
+  templates/
+    style.css      # override the stylesheet
+    page.html      # override the note page layout
+    index.html     # override the index/listing page layout
+  my-note.md
+  ...
+```
 
-Remove `blog.css` from your notes folder to go back to the default.
+To get started, copy the defaults from [`templates/`](templates/) into your notes folder:
+
+```bash
+cp -r /path/to/notesync/templates ~/notes/templates
+```
+
+Edit the files, save, and the blog rebuilds automatically. Remove the `templates/` folder (or individual files) to go back to the defaults.
 
 ## Commands
 
