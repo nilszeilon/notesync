@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nilszeilon/notesync/internal/fileutil"
 )
 
 const TombstoneTTL = 30 * 24 * time.Hour
@@ -145,7 +147,7 @@ func (s *Storage) List() ([]FileInfo, error) {
 			return err
 		}
 
-		hash, err := hashFile(path)
+		hash, err := fileutil.HashFile(path)
 		if err != nil {
 			return fmt.Errorf("hash %s: %w", relPath, err)
 		}
@@ -174,20 +176,6 @@ func (s *Storage) Get(relPath string) (io.ReadCloser, error) {
 
 func (s *Storage) FullPath(relPath string) (string, error) {
 	return s.safePath(relPath)
-}
-
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func HashReader(r io.Reader) (string, error) {

@@ -1,10 +1,7 @@
 package sync
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,13 +9,10 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/nilszeilon/notesync/internal/fileutil"
+	"github.com/nilszeilon/notesync/internal/markdown"
 	"github.com/nilszeilon/notesync/internal/storage"
 )
-
-var syncExts = map[string]bool{
-	".md": true, ".png": true, ".jpg": true, ".jpeg": true,
-	".gif": true, ".svg": true, ".webp": true,
-}
 
 type Watcher struct {
 	dir           string
@@ -45,10 +39,10 @@ func (w *Watcher) FullSync() error {
 	if w.publishClient != nil {
 		referencedImages := collectPublishedImageRefs(w.dir)
 		shouldSync := func(relPath, absPath string) bool {
-			if isMd(relPath) {
-				return isPublished(absPath)
+			if fileutil.IsMd(relPath) {
+				return markdown.IsPublished(absPath)
 			}
-			if isImage(relPath) {
+			if fileutil.IsImage(relPath) {
 				return referencedImages[filepath.Base(relPath)]
 			}
 			return false
@@ -101,7 +95,7 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if !syncExts[ext] {
+		if !fileutil.SyncExts[ext] {
 			return nil
 		}
 
@@ -113,7 +107,7 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 
 		localFiles[relPath] = true
 
-		localHash, err := hashFile(path)
+		localHash, err := fileutil.HashFile(path)
 		if err != nil {
 			return fmt.Errorf("hash local file %s: %w", relPath, err)
 		}
@@ -197,7 +191,7 @@ func (w *Watcher) fullSyncClient(c *Client, filter func(relPath, absPath string)
 		for _, rf := range remote {
 			if !localFiles[rf.Path] {
 				ext := strings.ToLower(filepath.Ext(rf.Path))
-				if !syncExts[ext] {
+				if !fileutil.SyncExts[ext] {
 					continue
 				}
 				log.Printf("downloading (new remote): %s", rf.Path)
@@ -262,7 +256,7 @@ func (w *Watcher) Watch() error {
 			}
 
 			ext := strings.ToLower(filepath.Ext(event.Name))
-			isSyncable := syncExts[ext]
+			isSyncable := fileutil.SyncExts[ext]
 
 			// Debounce: skip if we processed this file very recently
 			if last, ok := debounce[event.Name]; ok && time.Since(last) < 500*time.Millisecond {
@@ -332,20 +326,20 @@ func (w *Watcher) handleWrite(relPath, absPath string) {
 
 	// Publish client: upload if published md (+ its images), or referenced image
 	if w.publishClient != nil {
-		if isMd(relPath) && isPublished(absPath) {
+		if fileutil.IsMd(relPath) && markdown.IsPublished(absPath) {
 			log.Printf("syncing (publish): %s", relPath)
 			if err := w.publishClient.Upload(relPath, absPath); err != nil {
 				log.Printf("publish upload error: %v", err)
 			}
 			// Also sync any images referenced by this published file
 			w.syncReferencedImages(absPath)
-		} else if isMd(relPath) {
+		} else if fileutil.IsMd(relPath) {
 			// Markdown file that is not published — remove from publish server
 			log.Printf("removing unpublished from publish server: %s", relPath)
 			if err := w.publishClient.Delete(relPath); err != nil {
 				log.Printf("publish delete error: %v", err)
 			}
-		} else if isImage(relPath) {
+		} else if fileutil.IsImage(relPath) {
 			// Image changed — upload only if referenced by any published file
 			refs := collectPublishedImageRefs(w.dir)
 			if refs[filepath.Base(relPath)] {
@@ -365,7 +359,7 @@ func (w *Watcher) syncReferencedImages(absPath string) {
 	if err != nil {
 		return
 	}
-	refs := extractImageRefs(string(data))
+	refs := markdown.ExtractImageRefs(string(data))
 	if len(refs) == 0 {
 		return
 	}
@@ -375,7 +369,7 @@ func (w *Watcher) syncReferencedImages(absPath string) {
 	}
 	// Walk the sync dir for matching images
 	filepath.Walk(w.dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !isImage(path) {
+		if err != nil || info.IsDir() || !fileutil.IsImage(path) {
 			return nil
 		}
 		if !refSet[filepath.Base(path)] {
@@ -430,16 +424,3 @@ func (w *Watcher) handleDelete(relPath string) {
 	}
 }
 
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}

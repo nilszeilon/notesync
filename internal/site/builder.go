@@ -13,20 +13,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nilszeilon/notesync/internal/fileutil"
+	"github.com/nilszeilon/notesync/internal/markdown"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
-	"gopkg.in/yaml.v3"
 )
 
-type Frontmatter struct {
-	Title   string `yaml:"title"`
-	Publish bool   `yaml:"publish"`
-	Date    string `yaml:"date"`
-}
-
 type Note struct {
-	Frontmatter
+	markdown.Frontmatter
 	Slug     string
 	Body     string // markdown body without frontmatter
 	FilePath string // relative path in storage
@@ -161,12 +156,12 @@ func (b *Builder) collectNotes() ([]Note, error) {
 			return err
 		}
 
-		fm, body := parseFrontmatter(string(data))
+		fm, body := markdown.ParseFrontmatter(string(data))
 		// Preserve folder structure in slug: "projects/foo.md" → "projects/foo"
 		slugBase := strings.TrimSuffix(relPath, filepath.Ext(relPath))
 		parts := strings.Split(filepath.ToSlash(slugBase), "/")
 		for i, p := range parts {
-			parts[i] = Slugify(p)
+			parts[i] = markdown.Slugify(p)
 		}
 		slug := strings.Join(parts, "/")
 
@@ -184,26 +179,6 @@ func (b *Builder) collectNotes() ([]Note, error) {
 		return nil
 	})
 	return notes, err
-}
-
-func parseFrontmatter(content string) (Frontmatter, string) {
-	var fm Frontmatter
-	content = strings.TrimSpace(content)
-	if !strings.HasPrefix(content, "---") {
-		return fm, content
-	}
-
-	rest := content[3:]
-	endIdx := strings.Index(rest, "\n---")
-	if endIdx == -1 {
-		return fm, content
-	}
-
-	fmBlock := rest[:endIdx]
-	body := rest[endIdx+4:] // skip \n---
-
-	_ = yaml.Unmarshal([]byte(fmBlock), &fm)
-	return fm, strings.TrimSpace(body)
 }
 
 func (n Note) parsedDate() time.Time {
@@ -225,7 +200,7 @@ func buildBacklinks(notes []Note) map[string][]string {
 	// slug -> list of slugs that link to it
 	backlinks := make(map[string][]string)
 	for _, n := range notes {
-		links := ExtractWikiLinks(n.Body)
+		links := markdown.ExtractWikiLinks(n.Body)
 		for _, target := range links {
 			backlinks[target] = append(backlinks[target], n.Slug)
 		}
@@ -362,11 +337,6 @@ func (b *Builder) buildSearchIndex(notes []Note) error {
 	return os.WriteFile(filepath.Join(b.outDir, "search.json"), data, 0644)
 }
 
-var imageExts = map[string]bool{
-	".png": true, ".jpg": true, ".jpeg": true,
-	".gif": true, ".svg": true, ".webp": true,
-}
-
 func (b *Builder) copyImages() error {
 	return filepath.Walk(b.dataDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -376,7 +346,7 @@ func (b *Builder) copyImages() error {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if !imageExts[ext] {
+		if !fileutil.ImageExts[ext] {
 			return nil
 		}
 
