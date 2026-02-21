@@ -18,9 +18,9 @@ func ExtractWikiLinks(content string) []string {
 	var links []string
 	for _, m := range matches {
 		target := m[1]
-		// Handle [[display|target]] syntax
+		// Handle [[target|display]] syntax (Obsidian convention)
 		if idx := strings.Index(target, "|"); idx != -1 {
-			target = target[idx+1:]
+			target = target[:idx]
 		}
 		target = strings.TrimSpace(target)
 		slug := Slugify(target)

@@ -34,9 +34,10 @@ func ReplaceWikiLinks(content string) string {
 		display := inner
 		target := inner
 
+		// [[target|display]] — Obsidian convention
 		if idx := strings.Index(inner, "|"); idx != -1 {
-			display = inner[:idx]
-			target = inner[idx+1:]
+			target = inner[:idx]
+			display = inner[idx+1:]
 		}
 
 		display = strings.TrimSpace(display)
