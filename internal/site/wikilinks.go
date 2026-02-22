@@ -44,7 +44,11 @@ func ReplaceWikiLinks(content string) string {
 		target = strings.TrimSpace(target)
 		slug := markdown.Slugify(target)
 
-		return `<a href="/` + slug + `">` + html.EscapeString(display) + `</a>`
+		href := "/" + slug
+		if slug == "index" {
+			href = "/"
+		}
+		return `<a href="` + href + `">` + html.EscapeString(display) + `</a>`
 	})
 
 	return content
