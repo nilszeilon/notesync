@@ -233,13 +233,16 @@ func (w *Watcher) Watch() error {
 
 	log.Printf("watching %s for changes...", w.dir)
 
-	// Periodic remote poll for changes from other clients
+	// Periodic remote poll for changes from other clients.
+	// Push-only clients still poll so they can receive updates to
+	// files that already exist locally (fullSyncClient handles
+	// skipping new-file downloads when pushOnly is set).
 	var pollChan <-chan time.Time
-	if w.pollInterval > 0 && !w.pushOnly {
+	if w.pollInterval > 0 {
 		ticker := time.NewTicker(w.pollInterval)
 		defer ticker.Stop()
 		pollChan = ticker.C
-		log.Printf("polling remote every %s for new files", w.pollInterval)
+		log.Printf("polling remote every %s for changes", w.pollInterval)
 	}
 
 	// Debounce events
