@@ -273,6 +273,14 @@ func (w *Watcher) Watch() error {
 				continue
 			}
 
+			// Watch new directories before processing file events,
+			// so files created inside them are not missed.
+			if event.Op&fsnotify.Create != 0 {
+				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+					watcher.Add(event.Name)
+				}
+			}
+
 			switch {
 			case event.Op&(fsnotify.Create|fsnotify.Write) != 0:
 				if !isSyncable {
@@ -299,13 +307,6 @@ func (w *Watcher) Watch() error {
 					// No extension or non-syncable — likely a directory deletion.
 					// Delete all remote files under this prefix.
 					w.handleDirDelete(relPath)
-				}
-			}
-
-			// Also watch new directories
-			if event.Op&fsnotify.Create != 0 {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					watcher.Add(event.Name)
 				}
 			}
 
