@@ -75,13 +75,13 @@ func (b *Builder) Build() error {
 		return fmt.Errorf("collect notes: %w", err)
 	}
 
-	// Filter to published notes, separate out index note
+	// Filter to published notes, separate out home note (landing page)
 	var published []Note
-	var indexNote *Note
+	var homeNote *Note
 	for _, n := range notes {
-		if n.Slug == "index" {
+		if n.Slug == "home" {
 			n := n // copy
-			indexNote = &n
+			homeNote = &n
 			continue
 		}
 		if n.Publish {
@@ -96,10 +96,10 @@ func (b *Builder) Build() error {
 		return di.After(dj)
 	})
 
-	// Build backlink index (include index note if present)
+	// Build backlink index (include home note if present)
 	allPublished := published
-	if indexNote != nil {
-		allPublished = append(allPublished, *indexNote)
+	if homeNote != nil {
+		allPublished = append(allPublished, *homeNote)
 	}
 	backlinks := buildBacklinks(allPublished)
 
@@ -116,13 +116,17 @@ func (b *Builder) Build() error {
 		}
 	}
 
-	// Generate index page: use index.md if it exists, otherwise auto-generate listing
-	if indexNote != nil {
-		if err := b.buildIndexFromNote(*indexNote, backlinks[indexNote.Slug], slugIndex); err != nil {
-			return fmt.Errorf("build index from note: %w", err)
+	// Landing page: home.md renders at /, with the auto note listing at /index/.
+	// If there's no home.md, the note listing is the landing page at /.
+	if homeNote != nil {
+		if err := b.buildHomeFromNote(*homeNote, backlinks[homeNote.Slug], slugIndex); err != nil {
+			return fmt.Errorf("build home from note: %w", err)
+		}
+		if err := b.buildNoteIndex(published); err != nil {
+			return fmt.Errorf("build note index: %w", err)
 		}
 	} else {
-		if err := b.buildIndex(published); err != nil {
+		if err := b.buildIndex(published, b.outDir); err != nil {
 			return fmt.Errorf("build index: %w", err)
 		}
 	}
@@ -266,7 +270,7 @@ func (b *Builder) buildNotePage(n Note, backlinkSlugs []string, slugIndex map[st
 	return b.tmpl.ExecuteTemplate(f, "page.html", data)
 }
 
-func (b *Builder) buildIndexFromNote(n Note, backlinkSlugs []string, slugIndex map[string]Note) error {
+func (b *Builder) buildHomeFromNote(n Note, backlinkSlugs []string, slugIndex map[string]Note) error {
 	bodyWithLinks := ReplaceWikiLinks(n.Body)
 
 	var htmlBuf bytes.Buffer
@@ -305,7 +309,7 @@ func (b *Builder) buildIndexFromNote(n Note, backlinkSlugs []string, slugIndex m
 	return b.tmpl.ExecuteTemplate(f, "page.html", data)
 }
 
-func (b *Builder) buildIndex(notes []Note) error {
+func (b *Builder) buildIndex(notes []Note, destDir string) error {
 	var summaries []NoteSummary
 	for _, n := range notes {
 		summaries = append(summaries, NoteSummary{
@@ -317,13 +321,22 @@ func (b *Builder) buildIndex(notes []Note) error {
 
 	data := IndexData{Notes: summaries}
 
-	f, err := os.Create(filepath.Join(b.outDir, "index.html"))
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return err
+	}
+	f, err := os.Create(filepath.Join(destDir, "index.html"))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
 	return b.tmpl.ExecuteTemplate(f, "index.html", data)
+}
+
+// buildNoteIndex writes the auto-generated note listing to /index/index.html,
+// so it's reachable at /index when home.md takes over the root.
+func (b *Builder) buildNoteIndex(notes []Note) error {
+	return b.buildIndex(notes, filepath.Join(b.outDir, "index"))
 }
 
 type searchEntry struct {
