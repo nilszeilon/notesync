@@ -9,8 +9,10 @@ RUN CGO_ENABLED=0 go build -o /notesync-client ./cmd/client
 
 # Runtime stage
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates gosu && rm -rf /var/lib/apt/lists/*
 COPY --from=build /notesync-server /usr/local/bin/notesync-server
 COPY --from=build /notesync-client /usr/local/bin/notesync-client
-ENTRYPOINT ["notesync-server"]
-CMD ["-port", "8080", "-data", "/data", "-site", "/_site"]
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["notesync-server", "-port", "8080", "-data", "/data", "-site", "/_site"]
