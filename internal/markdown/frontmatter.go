@@ -12,6 +12,7 @@ type Frontmatter struct {
 	Title   string `yaml:"title"`
 	Publish bool   `yaml:"publish"`
 	Date    string `yaml:"date"`
+	Group   string `yaml:"group"`
 }
 
 // ParseFrontmatter splits markdown content into YAML frontmatter and body.

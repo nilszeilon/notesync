@@ -330,6 +330,7 @@ type searchEntry struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`
 	Date  string `json:"date"`
+	Group string `json:"group,omitempty"`
 }
 
 func (b *Builder) buildSearchIndex(notes []Note) error {
@@ -339,6 +340,7 @@ func (b *Builder) buildSearchIndex(notes []Note) error {
 			Title: n.Title,
 			Slug:  n.Slug,
 			Date:  n.dateString(),
+			Group: n.Group,
 		})
 	}
 	data, err := json.Marshal(entries)
